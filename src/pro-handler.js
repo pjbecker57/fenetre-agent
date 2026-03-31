@@ -9,15 +9,39 @@ const os = require('os');
 //  TRANSCRIPTION (OpenAI Whisper)
 // =============================================================
 async function transcribeAudio(audioUrl, twilioSid, twilioToken, openai) {
-  // 1. Télécharger l'audio depuis Twilio (avec redirect follow)
   console.log(`🎤 Téléchargement audio: ${audioUrl}`);
   
-  const response = await fetch(audioUrl, {
+  // Twilio media URLs redirigent vers un CDN. 
+  // Il faut d'abord suivre le redirect AVEC auth, puis télécharger depuis le CDN SANS auth.
+  
+  // Étape 1 : Obtenir l'URL finale (redirect) avec auth Twilio
+  const redirectRes = await fetch(audioUrl, {
     headers: {
       'Authorization': 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64'),
     },
-    redirect: 'follow',
+    redirect: 'manual', // Ne pas suivre automatiquement
   });
+
+  let finalUrl = audioUrl;
+  
+  if (redirectRes.status === 301 || redirectRes.status === 302 || redirectRes.status === 307) {
+    finalUrl = redirectRes.headers.get('location');
+    console.log(`🔀 Redirect vers: ${finalUrl}`);
+  }
+
+  // Étape 2 : Télécharger depuis l'URL finale (CDN, sans auth)
+  let response;
+  if (finalUrl !== audioUrl) {
+    // URL CDN — pas besoin d'auth
+    response = await fetch(finalUrl);
+  } else {
+    // Pas de redirect, télécharger directement avec auth
+    response = await fetch(audioUrl, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64'),
+      },
+    });
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -32,7 +56,7 @@ async function transcribeAudio(audioUrl, twilioSid, twilioToken, openai) {
     throw new Error(`Audio trop petit (${audioBuffer.length} bytes) — fichier probablement invalide`);
   }
 
-  // 2. Déterminer l'extension
+  // Déterminer l'extension
   let ext = '.ogg';
   if (contentType.includes('mp4') || contentType.includes('m4a')) ext = '.m4a';
   else if (contentType.includes('mpeg') || contentType.includes('mp3')) ext = '.mp3';
@@ -44,7 +68,7 @@ async function transcribeAudio(audioUrl, twilioSid, twilioToken, openai) {
   console.log(`💾 Audio sauvegardé: ${tmpFile}`);
 
   try {
-    // 3. Transcrire avec Whisper
+    // Transcrire avec Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tmpFile),
       model: 'whisper-1',
