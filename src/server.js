@@ -4,12 +4,45 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const twilio = require('twilio');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: false })); // Twilio envoie du form-urlencoded
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// =============================================================
+//  RATE LIMITING
+// =============================================================
+// Chat API : max 20 messages par minute par IP
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: 'Trop de messages. Veuillez patienter quelques instants avant de réessayer.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// WhatsApp webhook : max 30 par minute (Twilio peut envoyer des rafales)
+const whatsappLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: '<Response></Response>',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// API globale : max 60 requêtes par minute par IP
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Trop de requêtes. Réessayez dans quelques instants.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', globalLimiter);
 
 // =============================================================
 //  TWILIO CLIENT
@@ -490,7 +523,7 @@ const conversations = new Map();
 // =============================================================
 //  API CHAT
 // =============================================================
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', chatLimiter, async (req, res) => {
   try {
     const { message, conversationId } = req.body;
     if (!message || !message.trim()) {
@@ -801,7 +834,7 @@ app.get('/api/stats', async (req, res) => {
 // =============================================================
 //  WHATSAPP WEBHOOK (Twilio)
 // =============================================================
-app.post('/api/whatsapp', async (req, res) => {
+app.post('/api/whatsapp', whatsappLimiter, async (req, res) => {
   try {
     const incomingMsg = req.body.Body?.trim();
     const from = req.body.From; // "whatsapp:+33612345678"
