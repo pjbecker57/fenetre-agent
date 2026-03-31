@@ -982,11 +982,37 @@ app.get('/api/stats', async (req, res) => {
 // =============================================================
 app.post('/api/whatsapp', whatsappLimiter, async (req, res) => {
   try {
-    const incomingMsg = req.body.Body?.trim();
+    const incomingMsg = req.body.Body?.trim() || '';
     const from = req.body.From; // "whatsapp:+33612345678"
     const profileName = req.body.ProfileName || '';
+    const numMedia = parseInt(req.body.NumMedia || '0', 10);
 
-    if (!incomingMsg || !from) {
+    if (!from) {
+      return res.status(400).send('<Response></Response>');
+    }
+
+    // --- ROUTAGE : vocal ou "PRO:" → module artisan ---
+    const hasAudio = numMedia > 0 && (
+      req.body.MediaContentType0?.startsWith('audio/') ||
+      req.body.MediaContentType0 === 'application/ogg'
+    );
+    const isPro = hasAudio || incomingMsg.toUpperCase().startsWith('PRO');
+
+    if (isPro) {
+      // Enlever le préfixe "PRO" si présent
+      if (!hasAudio && incomingMsg.toUpperCase().startsWith('PRO')) {
+        req.body.Body = incomingMsg.replace(/^PRO[:\s]*/i, '').trim();
+      }
+      // Router vers le handler PRO
+      return app._router.handle(
+        Object.assign(req, { url: '/api/whatsapp-pro', originalUrl: '/api/whatsapp-pro' }),
+        res,
+        () => res.status(500).send('<Response></Response>')
+      );
+    }
+
+    // --- MODE CLIENT CLASSIQUE ---
+    if (!incomingMsg) {
       return res.status(400).send('<Response></Response>');
     }
 
