@@ -27,6 +27,169 @@ if (TWILIO_SID && TWILIO_TOKEN) {
 }
 
 // =============================================================
+//  SENDGRID EMAIL CLIENT
+// =============================================================
+const SENDGRID_KEY = process.env.SENDGRID_API_KEY;
+const SENDGRID_FROM = process.env.SENDGRID_FROM_EMAIL || 'noreply@fenetre-agent.com';
+let sgMail = null;
+if (SENDGRID_KEY) {
+  sgMail = require('@sendgrid/mail');
+  sgMail.setApiKey(SENDGRID_KEY);
+  console.log('📧 SendGrid Email activé');
+} else {
+  console.log('⚠️  SendGrid non configuré — Email désactivé');
+}
+
+// =============================================================
+//  CONVERSATION SUMMARY & SEND
+// =============================================================
+function buildConversationSummary(conv, data) {
+  const entreprise = data?.entreprise || {};
+  const nom = entreprise.Nom || 'Notre entreprise';
+  const tel = entreprise['Téléphone'] || '';
+
+  // Filter out system messages, keep user + assistant
+  const msgs = conv.messages.filter(m => m.role === 'user' || m.role === 'assistant');
+  
+  let summary = `📋 *Récapitulatif de votre échange avec ${nom}*\n\n`;
+  
+  for (const msg of msgs) {
+    if (msg.role === 'user') {
+      summary += `👤 *Vous* : ${msg.content}\n\n`;
+    } else {
+      summary += `🪟 *${nom}* : ${msg.content}\n\n`;
+    }
+  }
+
+  summary += `---\n`;
+  summary += `📞 Pour aller plus loin : ${tel}\n`;
+  summary += `📍 ${entreprise['Adresse Showroom'] || ''}\n`;
+  summary += `🕐 ${entreprise.Horaires || 'Lun-Ven 8h-18h'}\n`;
+
+  return summary;
+}
+
+function buildEmailHtml(conv, data) {
+  const entreprise = data?.entreprise || {};
+  const nom = entreprise.Nom || 'Notre entreprise';
+  const tel = entreprise['Téléphone'] || '';
+
+  const msgs = conv.messages.filter(m => m.role === 'user' || m.role === 'assistant');
+  
+  let html = `
+    <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="background: #2563EB; color: white; padding: 20px; border-radius: 12px 12px 0 0; text-align: center;">
+        <h1 style="margin: 0; font-size: 20px;">🪟 ${nom}</h1>
+        <p style="margin: 5px 0 0; opacity: 0.9;">Récapitulatif de votre conversation</p>
+      </div>
+      <div style="background: white; border: 1px solid #E5E7EB; padding: 20px; border-radius: 0 0 12px 12px;">
+  `;
+
+  for (const msg of msgs) {
+    if (msg.role === 'user') {
+      html += `
+        <div style="margin-bottom: 16px;">
+          <div style="font-weight: 600; color: #374151; margin-bottom: 4px;">👤 Vous</div>
+          <div style="background: #2563EB; color: white; padding: 12px 16px; border-radius: 12px; display: inline-block; max-width: 90%;">
+            ${msg.content.replace(/\n/g, '<br>')}
+          </div>
+        </div>`;
+    } else {
+      html += `
+        <div style="margin-bottom: 16px;">
+          <div style="font-weight: 600; color: #374151; margin-bottom: 4px;">🪟 ${nom}</div>
+          <div style="background: #F3F4F6; padding: 12px 16px; border-radius: 12px; display: inline-block; max-width: 90%;">
+            ${msg.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}
+          </div>
+        </div>`;
+    }
+  }
+
+  html += `
+        <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 24px 0;">
+        <div style="text-align: center; color: #6B7280; font-size: 14px;">
+          <p>📞 <strong>${tel}</strong> — ${entreprise.Horaires || 'Lun-Ven 8h-18h'}</p>
+          <p>📍 ${entreprise['Adresse Showroom'] || ''}</p>
+          <p style="margin-top: 16px;">Merci de votre intérêt ! N'hésitez pas à nous recontacter.</p>
+        </div>
+      </div>
+    </div>`;
+
+  return html;
+}
+
+async function sendSummaryWhatsApp(phone, summary) {
+  if (!twilioClient) {
+    console.log('⚠️  Twilio non configuré, impossible d\'envoyer le résumé WhatsApp');
+    return false;
+  }
+
+  // Format phone for WhatsApp
+  let waPhone = phone.replace(/[\s.-]/g, '');
+  if (waPhone.startsWith('0')) {
+    waPhone = '+33' + waPhone.substring(1);
+  }
+  if (!waPhone.startsWith('+')) {
+    waPhone = '+' + waPhone;
+  }
+
+  try {
+    // WhatsApp has a 1600 char limit per message, split if needed
+    const chunks = [];
+    let remaining = summary;
+    while (remaining.length > 0) {
+      if (remaining.length <= 1500) {
+        chunks.push(remaining);
+        break;
+      }
+      // Find a good split point
+      let splitAt = remaining.lastIndexOf('\n\n', 1500);
+      if (splitAt < 500) splitAt = 1500;
+      chunks.push(remaining.substring(0, splitAt));
+      remaining = remaining.substring(splitAt).trim();
+    }
+
+    for (const chunk of chunks) {
+      await twilioClient.messages.create({
+        body: chunk,
+        from: TWILIO_WA_NUMBER,
+        to: `whatsapp:${waPhone}`,
+      });
+    }
+
+    console.log(`✅ Résumé WhatsApp envoyé à ${waPhone}`);
+    return true;
+  } catch (err) {
+    console.error(`❌ Erreur envoi WhatsApp résumé:`, err.message);
+    return false;
+  }
+}
+
+async function sendSummaryEmail(email, html, entrepriseNom) {
+  if (!sgMail) {
+    console.log('⚠️  SendGrid non configuré, impossible d\'envoyer le résumé email');
+    return false;
+  }
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: SENDGRID_FROM,
+      subject: `Récapitulatif de votre échange avec ${entrepriseNom}`,
+      html: html,
+    });
+    console.log(`✅ Résumé email envoyé à ${email}`);
+    return true;
+  } catch (err) {
+    console.error(`❌ Erreur envoi email résumé:`, err.message);
+    return false;
+  }
+}
+
+// Track summary send status per conversation
+const summarySent = new Set();
+
+// =============================================================
 //  AIRTABLE CLIENT
 // =============================================================
 const AT_TOKEN = process.env.AIRTABLE_TOKEN;
@@ -487,6 +650,9 @@ app.post('/api/chat', async (req, res) => {
       }
     })();
 
+    // Track activity for auto-summary
+    trackActivity(convId);
+
     res.json({
       reply: visibleReply,
       conversationId: convId,
@@ -515,6 +681,92 @@ app.get('/api/info', async (req, res) => {
     })),
   });
 });
+
+// =============================================================
+//  API SEND SUMMARY (manual or auto trigger)
+// =============================================================
+app.post('/api/summary/:conversationId', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const conv = conversations.get(conversationId);
+
+    if (!conv) return res.status(404).json({ error: 'Conversation non trouvée' });
+    if (!conv.contact) return res.status(400).json({ error: 'Pas de coordonnées pour cette conversation' });
+    if (summarySent.has(conversationId)) return res.json({ status: 'already_sent' });
+
+    const data = await loadDataFromAirtable();
+    const results = { whatsapp: false, email: false };
+
+    if (conv.contact.telephone) {
+      const summary = buildConversationSummary(conv, data);
+      results.whatsapp = await sendSummaryWhatsApp(conv.contact.telephone, summary);
+    }
+
+    if (conv.contact.email) {
+      const html = buildEmailHtml(conv, data);
+      results.email = await sendSummaryEmail(conv.contact.email, html, data.entreprise?.Nom || 'Notre entreprise');
+    }
+
+    if (results.whatsapp || results.email) {
+      summarySent.add(conversationId);
+    }
+
+    res.json({ status: 'sent', results });
+  } catch (err) {
+    console.error('❌ Erreur envoi résumé:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================
+//  AUTO-SEND SUMMARY (after 10 min of inactivity)
+// =============================================================
+const convLastActivity = new Map();
+
+function trackActivity(convId) {
+  convLastActivity.set(convId, Date.now());
+}
+
+// Check every 2 minutes for inactive conversations
+setInterval(async () => {
+  const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
+  const now = Date.now();
+
+  for (const [convId, lastActive] of convLastActivity.entries()) {
+    if (now - lastActive < INACTIVITY_MS) continue;
+    if (summarySent.has(convId)) continue;
+
+    const conv = conversations.get(convId);
+    if (!conv || !conv.contact) continue;
+
+    // Only send if there were at least 3 messages (real conversation, not just a hello)
+    const userMsgs = conv.messages.filter(m => m.role === 'user').length;
+    if (userMsgs < 2) continue;
+
+    // Must have at least an email or phone
+    if (!conv.contact.email && !conv.contact.telephone) continue;
+
+    console.log(`⏰ Auto-envoi résumé pour ${convId} (inactif depuis ${Math.round((now - lastActive) / 60000)} min)`);
+
+    try {
+      const data = await loadDataFromAirtable();
+
+      if (conv.contact.telephone) {
+        const summary = buildConversationSummary(conv, data);
+        await sendSummaryWhatsApp(conv.contact.telephone, summary);
+      }
+
+      if (conv.contact.email) {
+        const html = buildEmailHtml(conv, data);
+        await sendSummaryEmail(conv.contact.email, html, data.entreprise?.Nom || 'Notre entreprise');
+      }
+
+      summarySent.add(convId);
+    } catch (err) {
+      console.error(`❌ Auto-envoi résumé échoué pour ${convId}:`, err.message);
+    }
+  }
+}, 2 * 60 * 1000); // Check toutes les 2 minutes
 
 // =============================================================
 //  API STATS
@@ -715,6 +967,9 @@ app.post('/api/whatsapp', async (req, res) => {
         console.error('⚠️  Erreur sync Airtable (WhatsApp):', err.message);
       }
     })();
+
+    // Track activity for auto-summary
+    trackActivity(convId);
 
     // Respond via Twilio TwiML
     const twiml = new twilio.twiml.MessagingResponse();
