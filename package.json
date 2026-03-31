@@ -1,7 +1,7 @@
 {
   "name": "fenetre-agent",
-  "version": "0.1.0",
-  "description": "Agent IA commercial pour menuiseries",
+  "version": "0.2.0",
+  "description": "Agent IA commercial pour menuiseries — chat web + WhatsApp + vocaux artisans",
   "scripts": {
     "dev": "node src/server.js",
     "start": "node src/server.js"

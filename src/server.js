@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const twilio = require('twilio');
 const rateLimit = require('express-rate-limit');
+const { transcribeAudio, analyzeVisitReport, formatVisitResponse, saveVisitReport } = require('./pro-handler');
 
 const app = express();
 app.use(cors());
@@ -717,6 +718,151 @@ app.get('/api/info', async (req, res) => {
       segment: g.Segment,
     })),
   });
+});
+
+// =============================================================
+//  WHATSAPP PRO — Webhook artisan (vocaux + comptes-rendus)
+// =============================================================
+const TWILIO_PRO_WA_NUMBER = process.env.TWILIO_PRO_WHATSAPP_NUMBER || TWILIO_WA_NUMBER;
+const proArtisanNumbers = new Set((process.env.PRO_ARTISAN_NUMBERS || '').split(',').map(n => n.trim()).filter(Boolean));
+
+app.post('/api/whatsapp-pro', whatsappLimiter, async (req, res) => {
+  try {
+    const from = req.body.From;
+    const numMedia = parseInt(req.body.NumMedia || '0', 10);
+    const textBody = req.body.Body?.trim() || '';
+    const profileName = req.body.ProfileName || '';
+
+    if (!from) {
+      return res.status(400).type('text/xml').send('<Response></Response>');
+    }
+
+    console.log(`🔧 PRO WhatsApp de ${profileName} (${from}): ${numMedia} media, texte: "${textBody}"`);
+
+    const twiml = new twilio.twiml.MessagingResponse();
+
+    // Vérifier si c'est un message vocal ou audio
+    const hasAudio = numMedia > 0 && (
+      req.body.MediaContentType0?.startsWith('audio/') ||
+      req.body.MediaContentType0 === 'application/ogg'
+    );
+
+    if (!hasAudio && !textBody) {
+      twiml.message("👋 Envoyez un message vocal avec votre compte-rendu de visite, ou tapez votre texte. Je m'occupe du reste !");
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    // Accusé de réception immédiat
+    let transcription = textBody;
+
+    if (hasAudio) {
+      const audioUrl = req.body.MediaUrl0;
+      console.log(`🎤 Audio reçu: ${audioUrl} (${req.body.MediaContentType0})`);
+
+      // Vérifier qu'OpenAI est configuré
+      if (!openai) {
+        twiml.message("⚠️ La transcription vocale n'est pas disponible en mode démo. Envoyez votre compte-rendu par texte.");
+        return res.type('text/xml').send(twiml.toString());
+      }
+
+      try {
+        twiml.message("🎤 Vocal reçu ! Transcription en cours...");
+
+        // Transcrire
+        transcription = await transcribeAudio(audioUrl, TWILIO_SID, TWILIO_TOKEN, openai);
+        console.log(`📝 Transcription: ${transcription.substring(0, 200)}...`);
+
+        // Envoyer la transcription à l'artisan
+        if (twilioClient) {
+          let waFrom = TWILIO_PRO_WA_NUMBER;
+          if (!waFrom.startsWith('whatsapp:')) waFrom = `whatsapp:${waFrom}`;
+
+          await twilioClient.messages.create({
+            body: `📝 *Transcription :*\n${transcription}`,
+            from: waFrom,
+            to: from,
+          });
+        }
+      } catch (err) {
+        console.error('❌ Erreur transcription:', err.message);
+        twiml.message("❌ Erreur de transcription. Réessayez ou envoyez votre compte-rendu par texte.");
+        return res.type('text/xml').send(twiml.toString());
+      }
+    }
+
+    // Analyser le compte-rendu
+    if (openai && transcription) {
+      try {
+        const analysis = await analyzeVisitReport(transcription, openai);
+
+        // Sauvegarder dans Airtable
+        const artisanPhone = from.replace('whatsapp:', '');
+        const result = await saveVisitReport(
+          analysis, transcription, artisanPhone,
+          airtableCreate, airtableUpdate, airtableFetch, AT_TABLES
+        );
+
+        // Formater la réponse
+        const response = formatVisitResponse(analysis);
+
+        // Envoyer l'analyse
+        if (twilioClient) {
+          let waFrom = TWILIO_PRO_WA_NUMBER;
+          if (!waFrom.startsWith('whatsapp:')) waFrom = `whatsapp:${waFrom}`;
+
+          await twilioClient.messages.create({
+            body: response,
+            from: waFrom,
+            to: from,
+          });
+        }
+
+        // Programmer le rappel deadline si une date est mentionnée
+        if (analysis.commercial?.deadline_devis) {
+          console.log(`⏰ Rappel à programmer pour ${analysis.commercial.deadline_devis}`);
+          // TODO: intégrer un système de rappels (cron, ou table Airtable "Rappels")
+        }
+
+      } catch (err) {
+        console.error('❌ Erreur analyse:', err.message);
+        if (twilioClient) {
+          let waFrom = TWILIO_PRO_WA_NUMBER;
+          if (!waFrom.startsWith('whatsapp:')) waFrom = `whatsapp:${waFrom}`;
+
+          await twilioClient.messages.create({
+            body: "⚠️ J'ai transcrit votre vocal mais je n'ai pas pu l'analyser. Il a été enregistré, vous pouvez réessayer.",
+            from: waFrom,
+            to: from,
+          });
+        }
+      }
+    }
+
+    // Si on a déjà envoyé via twilioClient, renvoyer un TwiML vide
+    if (!hasAudio) {
+      // Pour un message texte, on a pas encore répondu
+      const analysis = openai ? await analyzeVisitReport(transcription, openai) : null;
+      if (analysis) {
+        const response = formatVisitResponse(analysis);
+        const artisanPhone = from.replace('whatsapp:', '');
+        await saveVisitReport(
+          analysis, transcription, artisanPhone,
+          airtableCreate, airtableUpdate, airtableFetch, AT_TABLES
+        );
+        twiml.message(response);
+      } else {
+        twiml.message("✅ Compte-rendu enregistré : " + transcription.substring(0, 500));
+      }
+    }
+
+    res.type('text/xml').send(twiml.toString());
+
+  } catch (error) {
+    console.error('❌ Erreur PRO WhatsApp:', error);
+    const twiml = new twilio.twiml.MessagingResponse();
+    twiml.message("❌ Erreur technique. Réessayez dans quelques instants.");
+    res.type('text/xml').send(twiml.toString());
+  }
 });
 
 // =============================================================
