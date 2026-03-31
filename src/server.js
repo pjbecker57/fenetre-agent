@@ -17,6 +17,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 const TWILIO_SID   = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_WA_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886'; // Sandbox default
+const TWILIO_WA_SANDBOX_CODE = process.env.TWILIO_WHATSAPP_SANDBOX_CODE || 'join wealth-appearance';
 
 let twilioClient = null;
 if (TWILIO_SID && TWILIO_TOKEN) {
@@ -280,7 +281,10 @@ function buildSystemPrompt(data) {
   let prompt = systemPromptTemplate
     .replace(/\{\{entreprise_nom\}\}/g, entreprise.Nom || 'Notre entreprise')
     .replace(/\{\{entreprise_ville\}\}/g, entreprise.Ville || '')
-    .replace(/\{\{entreprise_tel\}\}/g, entreprise['Téléphone'] || '');
+    .replace(/\{\{entreprise_tel\}\}/g, entreprise['Téléphone'] || '')
+    .replace(/\{\{whatsapp_sandbox_code\}\}/g, TWILIO_WA_SANDBOX_CODE)
+    .replace(/\{\{whatsapp_sandbox_number\}\}/g, '+1 415 523 8886')
+    .replace(/\{\{whatsapp_sandbox_link\}\}/g, `https://wa.me/14155238886?text=${encodeURIComponent(TWILIO_WA_SANDBOX_CODE)}`);
 
   // Injection des données Airtable dans le contexte
   const catalogueContext = {
