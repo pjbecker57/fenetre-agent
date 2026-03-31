@@ -9,22 +9,39 @@ const os = require('os');
 //  TRANSCRIPTION (OpenAI Whisper)
 // =============================================================
 async function transcribeAudio(audioUrl, twilioSid, twilioToken, openai) {
-  // 1. Télécharger l'audio depuis Twilio (authentification requise)
+  // 1. Télécharger l'audio depuis Twilio (avec redirect follow)
+  console.log(`🎤 Téléchargement audio: ${audioUrl}`);
+  
   const response = await fetch(audioUrl, {
     headers: {
       'Authorization': 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64'),
     },
+    redirect: 'follow',
   });
 
   if (!response.ok) {
-    throw new Error(`Erreur téléchargement audio: ${response.status}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(`Erreur téléchargement audio: ${response.status} ${response.statusText} — ${body.substring(0, 200)}`);
   }
 
+  const contentType = response.headers.get('content-type') || 'audio/ogg';
   const audioBuffer = Buffer.from(await response.arrayBuffer());
+  console.log(`📦 Audio téléchargé: ${audioBuffer.length} bytes, type: ${contentType}`);
 
-  // 2. Sauvegarder temporairement
-  const tmpFile = path.join(os.tmpdir(), `vocal_${Date.now()}.ogg`);
+  if (audioBuffer.length < 100) {
+    throw new Error(`Audio trop petit (${audioBuffer.length} bytes) — fichier probablement invalide`);
+  }
+
+  // 2. Déterminer l'extension
+  let ext = '.ogg';
+  if (contentType.includes('mp4') || contentType.includes('m4a')) ext = '.m4a';
+  else if (contentType.includes('mpeg') || contentType.includes('mp3')) ext = '.mp3';
+  else if (contentType.includes('wav')) ext = '.wav';
+  else if (contentType.includes('webm')) ext = '.webm';
+
+  const tmpFile = path.join(os.tmpdir(), `vocal_${Date.now()}${ext}`);
   fs.writeFileSync(tmpFile, audioBuffer);
+  console.log(`💾 Audio sauvegardé: ${tmpFile}`);
 
   try {
     // 3. Transcrire avec Whisper
@@ -35,9 +52,10 @@ async function transcribeAudio(audioUrl, twilioSid, twilioToken, openai) {
       response_format: 'text',
     });
 
-    return transcription.trim();
+    const result = typeof transcription === 'string' ? transcription.trim() : transcription;
+    console.log(`✅ Transcription OK: ${String(result).substring(0, 100)}...`);
+    return String(result).trim();
   } finally {
-    // Nettoyer le fichier temp
     try { fs.unlinkSync(tmpFile); } catch (e) {}
   }
 }
@@ -173,7 +191,7 @@ function formatVisitResponse(analysis) {
 }
 
 // =============================================================
-//  SAVE TO AIRTABLE (table Leads enrichie)
+//  SAVE TO AIRTABLE
 // =============================================================
 async function saveVisitReport(analysis, transcription, artisanPhone, airtableCreate, airtableUpdate, airtableFetch, tables) {
   const c = analysis.client;
@@ -182,7 +200,6 @@ async function saveVisitReport(analysis, transcription, artisanPhone, airtableCr
   const now = new Date().toISOString();
   const convId = `pro_${artisanPhone.replace(/[^0-9]/g, '')}_${Date.now()}`;
 
-  // Créer le lead avec les infos de la visite
   const fields = {
     'ID Conversation': convId,
     'Date Premier Contact': now,
@@ -201,7 +218,6 @@ async function saveVisitReport(analysis, transcription, artisanPhone, airtableCr
   try {
     const leadRes = await airtableCreate(tables.leads, [{ fields }]);
 
-    // Sauvegarder la transcription dans les conversations
     await airtableCreate(tables.conversations, [
       {
         fields: {
