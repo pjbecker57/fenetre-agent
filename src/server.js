@@ -242,7 +242,6 @@ function extractContact(reply) {
   if (!match) return null;
   try {
     const contact = JSON.parse(match[1]);
-    // Only return if at least a name was provided
     if (contact.prenom || contact.nom) return contact;
     return null;
   } catch (e) {
@@ -251,8 +250,43 @@ function extractContact(reply) {
 }
 
 function cleanReply(reply) {
-  // Remove the hidden JSON tag from the visible reply
   return reply.replace(/\s*<!--CONTACT:.*?-->\s*/g, '').trim();
+}
+
+// =============================================================
+//  CONTACT EXTRACTION FROM USER MESSAGE (server-side backup)
+// =============================================================
+function extractContactFromUserMessage(message) {
+  const contact = { prenom: '', nom: '', email: '', telephone: '', ville: '' };
+  let found = false;
+
+  // Email
+  const emailMatch = message.match(/[\w.-]+@[\w.-]+\.\w{2,}/);
+  if (emailMatch) { contact.email = emailMatch[0]; found = true; }
+
+  // Phone (French formats)
+  const phoneMatch = message.match(/(?:(?:\+33|0033|0)\s*[1-9])(?:[\s.-]*\d{2}){4}/);
+  if (phoneMatch) { contact.telephone = phoneMatch[0].replace(/[\s.-]/g, ''); found = true; }
+
+  // Ville — look for patterns like "à Ville", "de Ville", "ville : Ville", "à Ville"
+  const villeMatch = message.match(/(?:à|de|ville\s*[:=]?\s*|habite\s*(?:à)?\s*|suis\s*(?:à|de)\s*)([A-ZÀ-Ü][a-zà-ü]+(?:[\s-][A-ZÀ-Ü][a-zà-ü]+)*)/i);
+  if (villeMatch) { contact.ville = villeMatch[1].trim(); found = true; }
+
+  // Name — try to extract from beginning or "je suis/m'appelle" patterns
+  const nameMatch = message.match(/(?:je\s+(?:suis|m'appelle|me\s+nomme)\s+|^)([A-ZÀ-Ü][a-zà-ü]+(?:\s+[A-ZÀ-Ü][a-zà-ü]+))/i);
+  if (nameMatch) {
+    const parts = nameMatch[1].trim().split(/\s+/);
+    if (parts.length >= 2) {
+      contact.prenom = parts[0];
+      contact.nom = parts.slice(1).join(' ');
+      found = true;
+    } else if (parts.length === 1) {
+      contact.prenom = parts[0];
+      found = true;
+    }
+  }
+
+  return found ? contact : null;
 }
 
 // =============================================================
@@ -335,16 +369,26 @@ app.post('/api/chat', async (req, res) => {
       reply = completion.choices[0].message.content;
     }
 
-    // Extract contact info if provided
-    const contact = extractContact(reply);
+    // Extract contact info from AI reply (hidden JSON) or from user message (backup)
+    const contactFromAI = extractContact(reply);
+    const contactFromMsg = extractContactFromUserMessage(message);
+    const contact = contactFromAI || contactFromMsg;
     const visibleReply = cleanReply(reply);
 
     conv.messages.push({ role: 'assistant', content: visibleReply });
 
     // Store contact on conversation object
     if (contact) {
-      conv.contact = { ...(conv.contact || {}), ...contact };
-      console.log(`📋 Contact collecté (web): ${contact.prenom} ${contact.nom} — ${contact.email || contact.telephone || '?'}`);
+      // Merge: keep existing values, add new ones
+      const prev = conv.contact || {};
+      conv.contact = {
+        prenom: contact.prenom || prev.prenom || '',
+        nom: contact.nom || prev.nom || '',
+        email: contact.email || prev.email || '',
+        telephone: contact.telephone || prev.telephone || '',
+        ville: contact.ville || prev.ville || '',
+      };
+      console.log(`📋 Contact collecté (web): ${conv.contact.prenom} ${conv.contact.nom} — ${conv.contact.email || conv.contact.telephone || '?'} — ${conv.contact.ville || '?'}`);
     }
 
     // --- SYNC TO AIRTABLE (non-blocking) ---
@@ -549,15 +593,24 @@ app.post('/api/whatsapp', async (req, res) => {
     conv.messages.push({ role: 'assistant', content: reply });
 
     // Extract contact info
-    const contact = extractContact(reply);
+    const contactFromAI = extractContact(reply);
+    const contactFromMsg = extractContactFromUserMessage(incomingMsg);
+    const contact = contactFromAI || contactFromMsg;
     const visibleReply = cleanReply(reply);
 
     // Overwrite last assistant message with cleaned version
     conv.messages[conv.messages.length - 1].content = visibleReply;
 
     if (contact) {
-      conv.contact = { ...(conv.contact || {}), ...contact };
-      console.log(`📋 Contact collecté (WhatsApp): ${contact.prenom} ${contact.nom}`);
+      const prev = conv.contact || {};
+      conv.contact = {
+        prenom: contact.prenom || prev.prenom || '',
+        nom: contact.nom || prev.nom || '',
+        email: contact.email || prev.email || '',
+        telephone: contact.telephone || prev.telephone || '',
+        ville: contact.ville || prev.ville || '',
+      };
+      console.log(`📋 Contact collecté (WhatsApp): ${conv.contact.prenom} ${conv.contact.nom}`);
     }
 
     // Clean markdown for WhatsApp (bold only, no ## headers)
