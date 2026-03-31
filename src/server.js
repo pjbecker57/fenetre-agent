@@ -475,7 +475,7 @@ function computeLeadScore(intents, messageCount) {
 // =============================================================
 //  WELCOME MESSAGE (must match what's shown in the frontend)
 // =============================================================
-const WELCOME_MESSAGE = "Bonjour ! 👋 Je suis l'assistant virtuel de {{entreprise_nom}}.\n\nJe peux vous aider à choisir vos fenêtres, comparer les matériaux, et obtenir des fourchettes de prix.\n\nPour que vous puissiez retrouver facilement notre échange, je peux vous envoyer un résumé par email ou WhatsApp à la fin de notre conversation. Pour cela, pourriez-vous me communiquer :\n- Votre prénom et nom\n- Votre email ou numéro de portable\n- Votre ville\n\nBien sûr, c'est facultatif — vous pouvez aussi poser vos questions directement ! 😊";
+const WELCOME_MESSAGE = "Bonjour ! 👋 Je suis Léa, l'assistante virtuelle de {{entreprise_nom}}.\n\nJe peux vous aider à choisir vos fenêtres, comparer les matériaux, et obtenir des fourchettes de prix.\n\nPour que vous puissiez retrouver facilement notre échange, je peux vous envoyer un résumé par email ou WhatsApp à la fin de notre conversation. Pour cela, pourriez-vous me communiquer :\n- Votre prénom et nom\n- Votre email ou numéro de portable\n- Votre ville\n\nBien sûr, c'est facultatif — vous pouvez aussi poser vos questions directement ! 😊";
 
 function getWelcomeMessage(data) {
   const nom = data?.entreprise?.Nom || 'notre entreprise';
