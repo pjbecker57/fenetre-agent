@@ -1022,6 +1022,50 @@ app.post('/api/whatsapp', whatsappLimiter, async (req, res) => {
 });
 
 // =============================================================
+//  API RGPD — Suppression des données
+// =============================================================
+app.delete('/api/data/:conversationId', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    // Supprimer de la mémoire
+    conversations.delete(conversationId);
+    summarySent.delete(conversationId);
+    convLastActivity.delete(conversationId);
+
+    // Supprimer les leads Airtable
+    const leadsRes = await airtableFetch(AT_TABLES.leads,
+      `?filterByFormula={ID Conversation}="${conversationId}"`);
+    for (const record of (leadsRes.records || [])) {
+      await fetch(`https://api.airtable.com/v0/${AT_BASE}/${AT_TABLES.leads}/${record.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${AT_TOKEN}` },
+      });
+    }
+
+    // Supprimer les conversations Airtable
+    const convsRes = await airtableFetch(AT_TABLES.conversations,
+      `?filterByFormula={ID Conversation}="${conversationId}"`);
+    // Airtable limite les suppressions par batch de 10
+    const convRecords = convsRes.records || [];
+    for (let i = 0; i < convRecords.length; i += 10) {
+      const batch = convRecords.slice(i, i + 10);
+      const ids = batch.map(r => `records[]=${r.id}`).join('&');
+      await fetch(`https://api.airtable.com/v0/${AT_BASE}/${AT_TABLES.conversations}?${ids}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${AT_TOKEN}` },
+      });
+    }
+
+    console.log(`🗑️  RGPD: données supprimées pour ${conversationId}`);
+    res.json({ status: 'deleted', conversationId });
+  } catch (err) {
+    console.error('❌ Erreur suppression RGPD:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================
 //  START
 // =============================================================
 const PORT = process.env.PORT || 3000;
