@@ -235,6 +235,27 @@ function getDemoReply(message, data) {
 }
 
 // =============================================================
+//  CONTACT EXTRACTION (from hidden JSON in AI reply)
+// =============================================================
+function extractContact(reply) {
+  const match = reply.match(/<!--CONTACT:(.*?)-->/);
+  if (!match) return null;
+  try {
+    const contact = JSON.parse(match[1]);
+    // Only return if at least a name was provided
+    if (contact.prenom || contact.nom) return contact;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function cleanReply(reply) {
+  // Remove the hidden JSON tag from the visible reply
+  return reply.replace(/\s*<!--CONTACT:.*?-->\s*/g, '').trim();
+}
+
+// =============================================================
 //  INTENT DETECTION
 // =============================================================
 function detectIntent(userMessage) {
@@ -314,7 +335,17 @@ app.post('/api/chat', async (req, res) => {
       reply = completion.choices[0].message.content;
     }
 
-    conv.messages.push({ role: 'assistant', content: reply });
+    // Extract contact info if provided
+    const contact = extractContact(reply);
+    const visibleReply = cleanReply(reply);
+
+    conv.messages.push({ role: 'assistant', content: visibleReply });
+
+    // Store contact on conversation object
+    if (contact) {
+      conv.contact = { ...(conv.contact || {}), ...contact };
+      console.log(`📋 Contact collecté (web): ${contact.prenom} ${contact.nom} — ${contact.email || contact.telephone || '?'}`);
+    }
 
     // --- SYNC TO AIRTABLE (non-blocking) ---
     const userMsgCount = conv.messages.filter(m => m.role === 'user').length;
@@ -341,6 +372,18 @@ app.post('/api/chat', async (req, res) => {
     (async () => {
       try {
         const now = new Date().toISOString();
+        const contactFields = {};
+        if (conv.contact) {
+          if (conv.contact.prenom || conv.contact.nom)
+            contactFields['Nom'] = `${conv.contact.prenom || ''} ${conv.contact.nom || ''}`.trim();
+          if (conv.contact.email)
+            contactFields['Email'] = conv.contact.email;
+          if (conv.contact.telephone)
+            contactFields['Téléphone'] = conv.contact.telephone;
+          if (conv.contact.ville)
+            contactFields['Ville'] = conv.contact.ville;
+        }
+
         if (!conv.leadRecordId) {
           // Create lead
           const leadRes = await airtableCreate(AT_TABLES.leads, [{
@@ -353,6 +396,7 @@ app.post('/api/chat', async (req, res) => {
               'Intentions Détectées': airtableIntents,
               'Score Lead': leadScore,
               'Source': 'Site web',
+              ...contactFields,
             }
           }]);
           if (leadRes.records?.[0]?.id) {
@@ -368,6 +412,7 @@ app.post('/api/chat', async (req, res) => {
               'Statut': statut,
               'Intentions Détectées': airtableIntents,
               'Score Lead': leadScore,
+              ...contactFields,
             }
           }]);
         }
@@ -388,7 +433,7 @@ app.post('/api/chat', async (req, res) => {
               'ID Conversation': convId,
               'Horodatage': new Date(Date.now() + 1000).toISOString(),
               'Rôle': 'Agent IA',
-              'Message': reply.substring(0, 5000), // Airtable text limit
+              'Message': visibleReply.substring(0, 5000),
               'Intentions': '',
             }
           }
@@ -399,7 +444,7 @@ app.post('/api/chat', async (req, res) => {
     })();
 
     res.json({
-      reply,
+      reply: visibleReply,
       conversationId: convId,
       intent: intents,
     });
@@ -503,8 +548,20 @@ app.post('/api/whatsapp', async (req, res) => {
 
     conv.messages.push({ role: 'assistant', content: reply });
 
+    // Extract contact info
+    const contact = extractContact(reply);
+    const visibleReply = cleanReply(reply);
+
+    // Overwrite last assistant message with cleaned version
+    conv.messages[conv.messages.length - 1].content = visibleReply;
+
+    if (contact) {
+      conv.contact = { ...(conv.contact || {}), ...contact };
+      console.log(`📋 Contact collecté (WhatsApp): ${contact.prenom} ${contact.nom}`);
+    }
+
     // Clean markdown for WhatsApp (bold only, no ## headers)
-    const waReply = reply
+    const waReply = visibleReply
       .replace(/#{1,6}\s/g, '')          // Remove markdown headers
       .replace(/\*\*(.*?)\*\*/g, '*$1*') // **bold** → *bold* (WhatsApp style)
       .substring(0, 1600);               // WhatsApp message limit
@@ -533,6 +590,18 @@ app.post('/api/whatsapp', async (req, res) => {
         const now = new Date().toISOString();
         const phoneClean = from.replace('whatsapp:', '');
 
+        const contactFields = { 'Téléphone': phoneClean };
+        if (profileName) contactFields['Nom'] = profileName;
+        // Merge with AI-extracted contact if available
+        if (conv.contact) {
+          if (conv.contact.prenom || conv.contact.nom)
+            contactFields['Nom'] = `${conv.contact.prenom || ''} ${conv.contact.nom || ''}`.trim();
+          if (conv.contact.email)
+            contactFields['Email'] = conv.contact.email;
+          if (conv.contact.ville)
+            contactFields['Ville'] = conv.contact.ville;
+        }
+
         if (!conv.leadRecordId) {
           const leadRes = await airtableCreate(AT_TABLES.leads, [{
             fields: {
@@ -544,8 +613,7 @@ app.post('/api/whatsapp', async (req, res) => {
               'Intentions Détectées': airtableIntents,
               'Score Lead': leadScore,
               'Source': 'WhatsApp',
-              'Téléphone': phoneClean,
-              'Nom': profileName,
+              ...contactFields,
             }
           }]);
           if (leadRes.records?.[0]?.id) {
@@ -560,6 +628,7 @@ app.post('/api/whatsapp', async (req, res) => {
               'Statut': statut,
               'Intentions Détectées': airtableIntents,
               'Score Lead': leadScore,
+              ...contactFields,
             }
           }]);
         }
@@ -579,7 +648,7 @@ app.post('/api/whatsapp', async (req, res) => {
               'ID Conversation': convId,
               'Horodatage': new Date(Date.now() + 1000).toISOString(),
               'Rôle': 'Agent IA',
-              'Message': reply.substring(0, 5000),
+              'Message': visibleReply.substring(0, 5000),
               'Intentions': '',
             }
           }
