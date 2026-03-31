@@ -255,6 +255,8 @@ function cleanReply(reply) {
 
 // =============================================================
 //  CONTACT EXTRACTION FROM USER MESSAGE (server-side backup)
+//  Only extracts phone & email (reliable patterns).
+//  Name & ville come from AI extraction only (too error-prone via regex).
 // =============================================================
 function extractContactFromUserMessage(message) {
   const contact = { prenom: '', nom: '', email: '', telephone: '', ville: '' };
@@ -264,27 +266,9 @@ function extractContactFromUserMessage(message) {
   const emailMatch = message.match(/[\w.-]+@[\w.-]+\.\w{2,}/);
   if (emailMatch) { contact.email = emailMatch[0]; found = true; }
 
-  // Phone (French formats)
-  const phoneMatch = message.match(/(?:(?:\+33|0033|0)\s*[1-9])(?:[\s.-]*\d{2}){4}/);
+  // Phone (French formats: 06/07, +33, with optional spaces/dots/dashes)
+  const phoneMatch = message.match(/(?:(?:\+33|0033)\s*[67]|0[67])(?:[\s.-]*\d{2}){4}/);
   if (phoneMatch) { contact.telephone = phoneMatch[0].replace(/[\s.-]/g, ''); found = true; }
-
-  // Ville — look for patterns like "à Ville", "de Ville", "ville : Ville", "à Ville"
-  const villeMatch = message.match(/(?:à|de|ville\s*[:=]?\s*|habite\s*(?:à)?\s*|suis\s*(?:à|de)\s*)([A-ZÀ-Ü][a-zà-ü]+(?:[\s-][A-ZÀ-Ü][a-zà-ü]+)*)/i);
-  if (villeMatch) { contact.ville = villeMatch[1].trim(); found = true; }
-
-  // Name — try to extract from beginning or "je suis/m'appelle" patterns
-  const nameMatch = message.match(/(?:je\s+(?:suis|m'appelle|me\s+nomme)\s+|^)([A-ZÀ-Ü][a-zà-ü]+(?:\s+[A-ZÀ-Ü][a-zà-ü]+))/i);
-  if (nameMatch) {
-    const parts = nameMatch[1].trim().split(/\s+/);
-    if (parts.length >= 2) {
-      contact.prenom = parts[0];
-      contact.nom = parts.slice(1).join(' ');
-      found = true;
-    } else if (parts.length === 1) {
-      contact.prenom = parts[0];
-      found = true;
-    }
-  }
 
   return found ? contact : null;
 }
