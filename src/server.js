@@ -3,11 +3,28 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const twilio = require('twilio');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // Twilio envoie du form-urlencoded
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// =============================================================
+//  TWILIO CLIENT
+// =============================================================
+const TWILIO_SID   = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_WA_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886'; // Sandbox default
+
+let twilioClient = null;
+if (TWILIO_SID && TWILIO_TOKEN) {
+  twilioClient = new twilio(TWILIO_SID, TWILIO_TOKEN);
+  console.log('📱 Twilio WhatsApp activé');
+} else {
+  console.log('⚠️  Twilio non configuré — WhatsApp désactivé');
+}
 
 // =============================================================
 //  AIRTABLE CLIENT
@@ -433,6 +450,155 @@ app.get('/api/stats', async (req, res) => {
     res.json(stats);
   } catch (err) {
     res.json({ conversations_actives: conversations.size, error: err.message });
+  }
+});
+
+// =============================================================
+//  WHATSAPP WEBHOOK (Twilio)
+// =============================================================
+app.post('/api/whatsapp', async (req, res) => {
+  try {
+    const incomingMsg = req.body.Body?.trim();
+    const from = req.body.From; // "whatsapp:+33612345678"
+    const profileName = req.body.ProfileName || '';
+
+    if (!incomingMsg || !from) {
+      return res.status(400).send('<Response></Response>');
+    }
+
+    console.log(`📱 WhatsApp de ${profileName} (${from}): ${incomingMsg}`);
+
+    // Load data from Airtable
+    const data = await loadDataFromAirtable();
+
+    // Use phone number as conversation ID for WhatsApp
+    const convId = `wa_${from.replace(/[^0-9]/g, '')}`;
+    if (!conversations.has(convId)) {
+      conversations.set(convId, { messages: [], intents: new Set(), leadRecordId: null });
+    }
+    const conv = conversations.get(convId);
+    conv.messages.push({ role: 'user', content: incomingMsg });
+
+    // Detect intents
+    const intents = detectIntent(incomingMsg);
+    intents.forEach(i => conv.intents.add(i));
+
+    // Generate reply
+    let reply;
+    if (DEMO_MODE) {
+      reply = getDemoReply(incomingMsg, data);
+    } else {
+      const messages = [
+        { role: 'system', content: buildSystemPrompt(data) + '\n\n## CONTEXTE : Ce client écrit via WhatsApp. Sois concis (max 3 paragraphes). Pas de markdown complexe (pas de tableaux). Utilise des emojis naturellement.' },
+        ...conv.messages.slice(-20),
+      ];
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages,
+        temperature: 0.7,
+        max_tokens: 500,
+      });
+      reply = completion.choices[0].message.content;
+    }
+
+    conv.messages.push({ role: 'assistant', content: reply });
+
+    // Clean markdown for WhatsApp (bold only, no ## headers)
+    const waReply = reply
+      .replace(/#{1,6}\s/g, '')          // Remove markdown headers
+      .replace(/\*\*(.*?)\*\*/g, '*$1*') // **bold** → *bold* (WhatsApp style)
+      .substring(0, 1600);               // WhatsApp message limit
+
+    // --- SYNC TO AIRTABLE (non-blocking) ---
+    const userMsgCount = conv.messages.filter(m => m.role === 'user').length;
+    const allIntents = Array.from(conv.intents);
+    const leadScore = computeLeadScore(allIntents, userMsgCount);
+
+    const intentMap = {
+      'price_inquiry': 'Prix',
+      'project': 'Projet concret',
+      'rdv_request': 'Demande RDV',
+      'human_request': 'Demande humain',
+      'aides': 'Aides financières',
+    };
+    const airtableIntents = allIntents.map(i => intentMap[i]).filter(Boolean);
+
+    let statut = 'En conversation';
+    if (userMsgCount === 1) statut = 'Nouveau';
+    if (allIntents.includes('rdv_request')) statut = 'Demande RDV';
+    if (allIntents.includes('human_request')) statut = 'Demande RDV';
+
+    (async () => {
+      try {
+        const now = new Date().toISOString();
+        const phoneClean = from.replace('whatsapp:', '');
+
+        if (!conv.leadRecordId) {
+          const leadRes = await airtableCreate(AT_TABLES.leads, [{
+            fields: {
+              'ID Conversation': convId,
+              'Date Premier Contact': now,
+              'Dernier Message': now,
+              'Nb Messages': userMsgCount,
+              'Statut': statut,
+              'Intentions Détectées': airtableIntents,
+              'Score Lead': leadScore,
+              'Source': 'WhatsApp',
+              'Téléphone': phoneClean,
+              'Nom': profileName,
+            }
+          }]);
+          if (leadRes.records?.[0]?.id) {
+            conv.leadRecordId = leadRes.records[0].id;
+          }
+        } else {
+          await airtableUpdate(AT_TABLES.leads, [{
+            id: conv.leadRecordId,
+            fields: {
+              'Dernier Message': now,
+              'Nb Messages': userMsgCount,
+              'Statut': statut,
+              'Intentions Détectées': airtableIntents,
+              'Score Lead': leadScore,
+            }
+          }]);
+        }
+
+        await airtableCreate(AT_TABLES.conversations, [
+          {
+            fields: {
+              'ID Conversation': convId,
+              'Horodatage': now,
+              'Rôle': 'Client (WhatsApp)',
+              'Message': incomingMsg,
+              'Intentions': intents.join(', '),
+            }
+          },
+          {
+            fields: {
+              'ID Conversation': convId,
+              'Horodatage': new Date(Date.now() + 1000).toISOString(),
+              'Rôle': 'Agent IA',
+              'Message': reply.substring(0, 5000),
+              'Intentions': '',
+            }
+          }
+        ]);
+      } catch (err) {
+        console.error('⚠️  Erreur sync Airtable (WhatsApp):', err.message);
+      }
+    })();
+
+    // Respond via Twilio TwiML
+    const twiml = new twilio.twiml.MessagingResponse();
+    twiml.message(waReply);
+    res.type('text/xml').send(twiml.toString());
+
+  } catch (error) {
+    console.error('❌ Erreur WhatsApp:', error);
+    const twiml = new twilio.twiml.MessagingResponse();
+    twiml.message("Désolé, j'ai un petit souci technique. Réessayez dans quelques instants ! 🙏");
+    res.type('text/xml').send(twiml.toString());
   }
 });
 
