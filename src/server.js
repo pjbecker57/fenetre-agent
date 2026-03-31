@@ -322,6 +322,16 @@ function computeLeadScore(intents, messageCount) {
 }
 
 // =============================================================
+//  WELCOME MESSAGE (must match what's shown in the frontend)
+// =============================================================
+const WELCOME_MESSAGE = "Bonjour ! 👋 Je suis l'assistant virtuel de {{entreprise_nom}}.\n\nJe peux vous aider à choisir vos fenêtres, comparer les matériaux, et obtenir des fourchettes de prix.\n\nPour que vous puissiez retrouver facilement notre échange, je peux vous envoyer un résumé par email ou WhatsApp à la fin de notre conversation. Pour cela, pourriez-vous me communiquer :\n- Votre prénom et nom\n- Votre email ou numéro de portable\n- Votre ville\n\nBien sûr, c'est facultatif — vous pouvez aussi poser vos questions directement ! 😊";
+
+function getWelcomeMessage(data) {
+  const nom = data?.entreprise?.Nom || 'notre entreprise';
+  return WELCOME_MESSAGE.replace(/\{\{entreprise_nom\}\}/g, nom);
+}
+
+// =============================================================
 //  CONVERSATIONS (in-memory + Airtable sync)
 // =============================================================
 const conversations = new Map();
@@ -342,7 +352,13 @@ app.post('/api/chat', async (req, res) => {
     // Get or create conversation
     const convId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     if (!conversations.has(convId)) {
-      conversations.set(convId, { messages: [], intents: new Set(), leadRecordId: null });
+      // Seed with welcome message so the AI knows it already greeted + asked for contact info
+      const welcome = getWelcomeMessage(data);
+      conversations.set(convId, {
+        messages: [{ role: 'assistant', content: welcome }],
+        intents: new Set(),
+        leadRecordId: null,
+      });
     }
     const conv = conversations.get(convId);
     conv.messages.push({ role: 'user', content: message });
@@ -563,7 +579,12 @@ app.post('/api/whatsapp', async (req, res) => {
     // Use phone number as conversation ID for WhatsApp
     const convId = `wa_${from.replace(/[^0-9]/g, '')}`;
     if (!conversations.has(convId)) {
-      conversations.set(convId, { messages: [], intents: new Set(), leadRecordId: null });
+      const welcome = getWelcomeMessage(data);
+      conversations.set(convId, {
+        messages: [{ role: 'assistant', content: welcome }],
+        intents: new Set(),
+        leadRecordId: null,
+      });
     }
     const conv = conversations.get(convId);
     conv.messages.push({ role: 'user', content: incomingMsg });

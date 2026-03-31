@@ -347,10 +347,16 @@
     const quickActions = document.getElementById('quickActions');
     const ctaBanner = document.getElementById('ctaBanner');
 
-    // --- Message d'accueil ---
-    window.addEventListener('DOMContentLoaded', () => {
+    // --- Message d'accueil (dynamique depuis le serveur) ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      let nom = 'Menuiseries Dupont';
+      try {
+        const res = await fetch('/api/info');
+        const info = await res.json();
+        if (info.entreprise?.Nom) nom = info.entreprise.Nom;
+      } catch (e) {}
       addMessage('assistant', 
-        "Bonjour ! 👋 Je suis l'assistant virtuel de **Menuiseries Dupont**.\n\nJe peux vous aider à choisir vos fenêtres, comparer les matériaux, et obtenir des fourchettes de prix.\n\nPour que vous puissiez retrouver facilement notre échange, je peux vous envoyer un résumé par **email** ou **WhatsApp** à la fin de notre conversation. Pour cela, pourriez-vous me communiquer :\n- Votre **prénom et nom**\n- Votre **email** ou **numéro de portable**\n- Votre **ville**\n\nBien sûr, c'est facultatif — vous pouvez aussi poser vos questions directement ! 😊"
+        `Bonjour ! 👋 Je suis l'assistant virtuel de **${nom}**.\n\nJe peux vous aider à choisir vos fenêtres, comparer les matériaux, et obtenir des fourchettes de prix.\n\nPour que vous puissiez retrouver facilement notre échange, je peux vous envoyer un résumé par **email** ou **WhatsApp** à la fin de notre conversation. Pour cela, pourriez-vous me communiquer :\n- Votre **prénom et nom**\n- Votre **email** ou **numéro de portable**\n- Votre **ville**\n\nBien sûr, c'est facultatif — vous pouvez aussi poser vos questions directement ! 😊`
       );
     });
 
