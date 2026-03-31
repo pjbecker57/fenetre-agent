@@ -1,0 +1,188 @@
+{
+  "entreprise": {
+    "nom": "Menuiseries Dupont",
+    "ville": "Lyon",
+    "telephone": "04 72 00 00 00",
+    "email": "contact@menuiseries-dupont.fr",
+    "horaires": "Lun-Ven 8h-18h, Sam 9h-12h",
+    "certifications": ["RGE QualiBAT", "Qualibat 3521", "NF Fenêtres"],
+    "zone_intervention": "Rhône-Alpes",
+    "anciennete": "25 ans",
+    "garantie_pose": "10 ans",
+    "showroom": "15 rue de la République, 69002 Lyon"
+  },
+  "gammes": [
+    {
+      "id": "eco-pvc",
+      "nom": "Éco Confort PVC",
+      "materiau": "PVC",
+      "type": "Entrée de gamme",
+      "vitrage": "Double vitrage 4/16/4 argon",
+      "uw": 1.3,
+      "sw": 0.3,
+      "affaiblissement_acoustique_db": 32,
+      "coloris": ["Blanc", "Gris anthracite", "Chêne doré"],
+      "garantie_chassis": "10 ans",
+      "fabrication": "France",
+      "prix_indicatif": {
+        "fenetre_1v_L60xH95": 320,
+        "fenetre_2v_L100xH115": 450,
+        "fenetre_2v_L120xH135": 520,
+        "porte_fenetre_1v_L80xH215": 650,
+        "porte_fenetre_2v_L140xH215": 850,
+        "baie_coulissante_2v_L180xH215": 1100
+      },
+      "points_forts": [
+        "Excellent rapport qualité/prix",
+        "Entretien facile",
+        "Bonne isolation thermique"
+      ],
+      "points_faibles": [
+        "Esthétique moins noble que l'alu",
+        "Profilés un peu épais"
+      ],
+      "ideal_pour": "Rénovation budget maîtrisé, logements locatifs"
+    },
+    {
+      "id": "confort-plus-pvc",
+      "nom": "Confort+ PVC",
+      "materiau": "PVC",
+      "type": "Milieu de gamme",
+      "vitrage": "Double vitrage 4/20/4 argon + couche bas-émissive",
+      "uw": 1.1,
+      "sw": 0.35,
+      "affaiblissement_acoustique_db": 37,
+      "coloris": ["Blanc", "Gris anthracite", "Noir sablé", "Chêne doré", "Chêne gris", "Vert mousse"],
+      "garantie_chassis": "15 ans",
+      "fabrication": "France",
+      "prix_indicatif": {
+        "fenetre_1v_L60xH95": 450,
+        "fenetre_2v_L100xH115": 620,
+        "fenetre_2v_L120xH135": 720,
+        "porte_fenetre_1v_L80xH215": 890,
+        "porte_fenetre_2v_L140xH215": 1150,
+        "baie_coulissante_2v_L180xH215": 1500
+      },
+      "points_forts": [
+        "Très bonne isolation thermique et acoustique",
+        "Large choix de coloris",
+        "Joints périphériques renforcés"
+      ],
+      "points_faibles": [
+        "Reste du PVC (pas d'esthétique alu slim)"
+      ],
+      "ideal_pour": "Résidence principale, bon compromis confort/budget"
+    },
+    {
+      "id": "prestige-alu",
+      "nom": "Prestige Alu",
+      "materiau": "Aluminium",
+      "type": "Haut de gamme",
+      "vitrage": "Triple vitrage 4/14/4/14/4 argon",
+      "uw": 0.9,
+      "sw": 0.25,
+      "affaiblissement_acoustique_db": 42,
+      "coloris": ["Gris anthracite RAL 7016", "Noir RAL 9005", "Blanc RAL 9016", "Toute teinte RAL sur demande"],
+      "garantie_chassis": "20 ans",
+      "fabrication": "France",
+      "prix_indicatif": {
+        "fenetre_1v_L60xH95": 680,
+        "fenetre_2v_L100xH115": 950,
+        "fenetre_2v_L120xH135": 1100,
+        "porte_fenetre_1v_L80xH215": 1350,
+        "porte_fenetre_2v_L140xH215": 1750,
+        "baie_coulissante_2v_L180xH215": 2400
+      },
+      "points_forts": [
+        "Design contemporain, profilés fins",
+        "Isolation maximale (triple vitrage)",
+        "Durabilité exceptionnelle",
+        "Résistance à la corrosion"
+      ],
+      "points_faibles": [
+        "Prix plus élevé",
+        "Moins isolant que le bois à épaisseur égale (compensé par le triple vitrage)"
+      ],
+      "ideal_pour": "Maisons contemporaines, projets architecturaux, performance maximale"
+    },
+    {
+      "id": "mixte-bois-alu",
+      "nom": "Authentique Bois/Alu",
+      "materiau": "Bois (intérieur) + Aluminium (extérieur)",
+      "type": "Premium",
+      "vitrage": "Triple vitrage 4/16/4/16/4 argon",
+      "uw": 0.85,
+      "sw": 0.28,
+      "affaiblissement_acoustique_db": 44,
+      "coloris_interieur": ["Chêne naturel", "Pin", "Chêne blanchi"],
+      "coloris_exterieur": ["Gris anthracite", "Noir", "Toute teinte RAL"],
+      "garantie_chassis": "25 ans",
+      "fabrication": "France",
+      "prix_indicatif": {
+        "fenetre_1v_L60xH95": 850,
+        "fenetre_2v_L100xH115": 1200,
+        "fenetre_2v_L120xH135": 1400,
+        "porte_fenetre_1v_L80xH215": 1700,
+        "porte_fenetre_2v_L140xH215": 2200,
+        "baie_coulissante_2v_L180xH215": 3100
+      },
+      "points_forts": [
+        "Le meilleur des deux mondes : chaleur du bois + résistance de l'alu",
+        "Isolation thermique et acoustique maximale",
+        "Esthétique haut de gamme",
+        "Zéro entretien extérieur"
+      ],
+      "points_faibles": [
+        "Prix le plus élevé",
+        "Entretien du bois intérieur (lasure tous les 5-7 ans)"
+      ],
+      "ideal_pour": "Maisons de caractère, clients exigeants, patrimoine"
+    }
+  ],
+  "services": {
+    "devis_gratuit": true,
+    "visite_technique": "Gratuite, sous 48h",
+    "delai_fabrication": "3 à 5 semaines",
+    "pose": {
+      "incluse": true,
+      "type": "Dépose totale ou rénovation selon état",
+      "duree_moyenne": "1 jour pour 3-4 fenêtres",
+      "equipe": "2 poseurs qualifiés"
+    },
+    "financement": {
+      "paiement_3x": true,
+      "credit": "Partenariat Cetelem / Sofinco",
+      "aides": ["MaPrimeRénov' (sous conditions)", "CEE (Certificats d'Économie d'Énergie)", "TVA 5.5% en rénovation", "Éco-PTZ"]
+    },
+    "sav": {
+      "delai_intervention": "72h maximum",
+      "hotline": "Lun-Ven 8h-18h"
+    }
+  },
+  "faq": [
+    {
+      "question": "Quelle est la différence entre double et triple vitrage ?",
+      "reponse": "Le double vitrage (2 verres + 1 lame d'air/argon) offre un bon niveau d'isolation (Uw ~1.1-1.3). Le triple vitrage (3 verres + 2 lames) pousse l'isolation encore plus loin (Uw ~0.8-0.9). Le triple vitrage est recommandé pour les maisons passives ou les expositions Nord. Pour la plupart des rénovations, un bon double vitrage suffit."
+    },
+    {
+      "question": "C'est quoi le coefficient Uw ?",
+      "reponse": "Le Uw (U window) mesure la déperdition thermique de la fenêtre complète (vitrage + châssis). Plus il est bas, meilleure est l'isolation. En France, la RT2012 exige Uw ≤ 1.4. Pour la RE2020, on vise Uw ≤ 1.1. Nos gammes vont de 1.3 (entrée de gamme) à 0.85 (premium)."
+    },
+    {
+      "question": "PVC ou aluminium ?",
+      "reponse": "Le PVC offre le meilleur rapport isolation/prix et nécessite zéro entretien. L'aluminium permet des profilés plus fins (plus de lumière) et un design contemporain, mais coûte 40-60% de plus. Pour une rénovation classique, le PVC est souvent le choix optimal. Pour du neuf contemporain ou de grandes baies, l'alu est préférable."
+    },
+    {
+      "question": "Quelles aides financières sont disponibles ?",
+      "reponse": "En rénovation, vous pouvez cumuler : TVA à 5.5% (au lieu de 20%), MaPrimeRénov' (jusqu'à 100€/fenêtre selon revenus), les CEE (primes énergie, ~50-100€/fenêtre), et l'Éco-PTZ (prêt à taux zéro jusqu'à 50 000€). Nous vous accompagnons dans les démarches."
+    },
+    {
+      "question": "Combien de temps dure le chantier ?",
+      "reponse": "Pour un remplacement standard de 5-6 fenêtres, comptez 1 à 2 jours. Nos équipes de 2 poseurs protègent votre intérieur et nettoient en fin de journée. Vous pouvez rester chez vous pendant les travaux."
+    },
+    {
+      "question": "Rénovation ou dépose totale ?",
+      "reponse": "La rénovation (pose sur dormant existant) est plus rapide et moins chère, mais réduit légèrement la surface vitrée. La dépose totale remplace tout, offre une meilleure isolation et plus de lumière, mais nécessite parfois des travaux de finition (enduit, peinture). Nous évaluons l'état de vos dormants lors de la visite technique pour vous conseiller."
+    }
+  ]
+}
